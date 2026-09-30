@@ -1,15 +1,17 @@
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.enums import OpportunityCategory
 
 
 class Opportunity(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: UUID = Field(default_factory=uuid4)
-    title: str
-    description: str
-    why_now: str
+    title: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+    why_now: str = Field(min_length=1)
     category: OpportunityCategory
     impact_score: float = Field(ge=0, le=100)
     timing_score: float = Field(ge=0, le=100)
