@@ -64,4 +64,14 @@ async def cluster_events(
             )
         )
 
+    for source_item in source_items:
+        if source_item.id not in assigned_ids:
+            events.append(
+                Event(
+                    title=source_item.title,
+                    summary=source_item.content,
+                    source_items=[source_item],
+                )
+            )
+
     return events

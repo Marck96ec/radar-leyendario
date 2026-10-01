@@ -8,6 +8,7 @@ from app.graph.state import RadarState
 from app.domain.source_item import SourceItem
 from app.domain.enums import SourceType
 from app.services.models.event_clustering import EventClusteringResponse
+from app.services.models.signal_detection import SignalDetectionResponse
 from datetime import datetime, timezone
 
 
@@ -88,8 +89,11 @@ class FakeLLMProvider:
         user_prompt: str,
         response_model: type[object],
     ) -> object:
-        assert response_model is EventClusteringResponse
-        return EventClusteringResponse(clusters=[])
+        if response_model is EventClusteringResponse:
+            return EventClusteringResponse(clusters=[])
+        if response_model is SignalDetectionResponse:
+            return SignalDetectionResponse(signals=[])
+        raise AssertionError(f"Unsupported response model: {response_model}")
 
 
 @pytest.mark.asyncio

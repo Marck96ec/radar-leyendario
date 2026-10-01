@@ -95,6 +95,83 @@ async def test_same_fact_becomes_one_event_with_all_sources() -> None:
 
 
 @pytest.mark.asyncio
+async def test_distinct_clusters_keep_each_source_item_in_its_own_event() -> None:
+    first = build_source_item("First event")
+    second = build_source_item("Second event")
+    provider = FakeLLMProvider(
+        EventClusteringResponse(
+            clusters=[
+                EventClusterCandidate(
+                    title="First",
+                    summary="First summary",
+                    source_item_ids=[first.id],
+                ),
+                EventClusterCandidate(
+                    title="Second",
+                    summary="Second summary",
+                    source_item_ids=[second.id],
+                ),
+            ]
+        )
+    )
+
+    events = await cluster_events([first, second], provider)
+
+    assert len(events) == 2
+    assert [event.source_items for event in events] == [[first], [second]]
+
+
+@pytest.mark.asyncio
+async def test_omitted_source_item_becomes_singleton_event() -> None:
+    first = build_source_item("First event")
+    second = build_source_item("Second event")
+    provider = FakeLLMProvider(
+        EventClusteringResponse(
+            clusters=[
+                EventClusterCandidate(
+                    title="First",
+                    summary="First summary",
+                    source_item_ids=[first.id],
+                )
+            ]
+        )
+    )
+
+    events = await cluster_events([first, second], provider)
+
+    assert len(events) == 2
+    assert events[1].title == second.title
+    assert events[1].summary == second.content
+    assert events[1].source_items == [second]
+
+
+@pytest.mark.asyncio
+async def test_each_source_item_appears_exactly_once_in_resulting_events() -> None:
+    first = build_source_item("First event")
+    second = build_source_item("Second event")
+    third = build_source_item("Third event")
+    provider = FakeLLMProvider(
+        EventClusteringResponse(
+            clusters=[
+                EventClusterCandidate(
+                    title="First and second",
+                    summary="First and second summary",
+                    source_item_ids=[first.id, second.id],
+                )
+            ]
+        )
+    )
+
+    events = await cluster_events([first, second, third], provider)
+
+    flattened_source_items = [
+        source_item for event in events for source_item in event.source_items
+    ]
+    assert flattened_source_items == [first, second, third]
+    assert len({source_item.id for source_item in flattened_source_items}) == 3
+
+
+@pytest.mark.asyncio
 async def test_invalid_ids_are_filtered_and_unknown_only_cluster_is_discarded() -> None:
     source_item = build_source_item("A real event")
     provider = FakeLLMProvider(
