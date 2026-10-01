@@ -1,7 +1,7 @@
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from app.graph.nodes.cluster_events import cluster_events
+from app.graph.nodes.cluster_events import build_cluster_events_node
 from app.graph.nodes.collect_sources import build_collect_sources_node
 from app.graph.nodes.detect_signals import build_detect_signals_node
 from app.graph.nodes.generate_opportunities import generate_opportunities
@@ -21,7 +21,7 @@ def build_radar_graph(
 
     graph.add_node("collect_sources", build_collect_sources_node(source_provider))
     graph.add_node("normalize_sources", normalize_sources)
-    graph.add_node("cluster_events", cluster_events)
+    graph.add_node("cluster_events", build_cluster_events_node(llm_provider))
     graph.add_node("detect_signals", build_detect_signals_node(llm_provider))
     graph.add_node("validate_evidence", validate_evidence)
     graph.add_node("generate_opportunities", generate_opportunities)

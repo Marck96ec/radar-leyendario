@@ -7,6 +7,7 @@ from app.graph.radar_graph import build_radar_graph
 from app.graph.state import RadarState
 from app.domain.source_item import SourceItem
 from app.domain.enums import SourceType
+from app.services.models.event_clustering import EventClusteringResponse
 from datetime import datetime, timezone
 
 
@@ -80,6 +81,17 @@ class FakeSourceProvider:
         return self.source_items
 
 
+class FakeLLMProvider:
+    async def structured_completion(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        response_model: type[object],
+    ) -> object:
+        assert response_model is EventClusteringResponse
+        return EventClusteringResponse(clusters=[])
+
+
 @pytest.mark.asyncio
 async def test_injected_source_provider_returns_partial_state_and_source_count() -> None:
     source_item = SourceItem(
@@ -92,7 +104,10 @@ async def test_injected_source_provider_returns_partial_state_and_source_count()
     )
     state = build_empty_state()
 
-    result = await build_radar_graph(source_provider=FakeSourceProvider([source_item])).ainvoke(state)
+    result = await build_radar_graph(
+        llm_provider=FakeLLMProvider(),
+        source_provider=FakeSourceProvider([source_item]),
+    ).ainvoke(state)
 
     assert result["source_items"] == [source_item]
     assert result["metadata"]["source_count"] == 1
