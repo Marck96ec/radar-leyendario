@@ -4,7 +4,7 @@ from app.graph.radar_graph import build_radar_graph
 from app.graph.state import RadarState
 
 
-def run_radar() -> RadarState:
+async def run_radar() -> RadarState:
     initial_state: RadarState = {
         "run_id": str(uuid4()),
         "source_items": [],
@@ -17,4 +17,4 @@ def run_radar() -> RadarState:
         "metadata": {},
     }
 
-    return build_radar_graph().invoke(initial_state)
+    return await build_radar_graph().ainvoke(initial_state)
