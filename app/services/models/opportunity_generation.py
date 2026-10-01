@@ -24,4 +24,4 @@ class OpportunityCandidate(BaseModel):
 class OpportunityGenerationResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    opportunities: list[OpportunityCandidate]
+    opportunities: list[OpportunityCandidate] = Field(max_length=3)

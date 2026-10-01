@@ -73,17 +73,19 @@ async def generate_opportunities(
     opportunities: list[Opportunity] = []
     signal_ids = set(evidence_by_signal)
     for signal in signals:
+        signal_evidence = evidence_by_signal[signal.id]
+        if not signal_evidence:
+            continue
+
         response = await llm_provider.structured_completion(
             system_prompt=SYSTEM_PROMPT,
             user_prompt=build_user_prompt(
                 _serialize_signal_grounding(
-                    signal, evidence_by_signal[signal.id], source_items_by_id
+                    signal, signal_evidence, source_items_by_id
                 )
             ),
             response_model=OpportunityGenerationResponse,
         )
-        if not evidence_by_signal[signal.id]:
-            continue
 
         valid_candidates = [
             candidate

@@ -97,6 +97,15 @@ async def test_empty_signals_return_without_calling_llm() -> None:
 
 
 @pytest.mark.asyncio
+async def test_signal_without_evidence_returns_without_calling_llm() -> None:
+    signal = build_signal()
+    provider = FakeLLMProvider(OpportunityGenerationResponse(opportunities=[]))
+
+    assert await generate_opportunities([signal], [], [], provider) == []
+    assert provider.calls == []
+
+
+@pytest.mark.asyncio
 async def test_valid_candidate_becomes_traceable_domain_opportunity() -> None:
     signal = build_signal()
     source = build_source()
@@ -142,18 +151,12 @@ async def test_unknown_signal_ids_are_discarded_and_grounding_is_signal_local() 
     assert payload["evidence"][0]["source_item"]["id"] == str(source.id)
 
 
-@pytest.mark.asyncio
-async def test_at_most_three_opportunities_are_created_per_signal() -> None:
+def test_response_rejects_more_than_three_opportunities() -> None:
     signal = build_signal()
-    source = build_source()
     candidates = [build_candidate(signal.id, OpportunityCategory.CONTENT) for _ in range(5)]
-    provider = FakeLLMProvider(OpportunityGenerationResponse(opportunities=candidates))
 
-    opportunities = await generate_opportunities(
-        [signal], [build_evidence(signal, source)], [source], provider
-    )
-
-    assert len(opportunities) == 3
+    with pytest.raises(ValidationError):
+        OpportunityGenerationResponse(opportunities=candidates)
 
 
 @pytest.mark.parametrize("category", list(OpportunityCategory))
