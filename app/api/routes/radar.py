@@ -20,8 +20,8 @@ class RadarRunResponse(BaseModel):
 
 
 @router.post("/run", response_model=RadarRunResponse)
-def run_radar_endpoint() -> RadarRunResponse:
-    state = run_radar()
+async def run_radar_endpoint() -> RadarRunResponse:
+    state = await run_radar()
     execution_trace = cast(list[str], state["metadata"].get("execution_trace", []))
 
     return RadarRunResponse(
