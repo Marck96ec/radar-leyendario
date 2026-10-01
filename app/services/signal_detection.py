@@ -3,11 +3,11 @@ from uuid import UUID
 
 from app.domain.event import Event
 from app.domain.signal import Signal
-from app.infrastructure.llm.prompts.signal_detection import (
+from app.services.prompts.signal_detection import (
     SYSTEM_PROMPT,
     build_user_prompt,
 )
-from app.infrastructure.llm.signal_detection import SignalDetectionResponse
+from app.services.models.signal_detection import SignalDetectionResponse
 from app.services.ports.llm import LLMProvider
 
 

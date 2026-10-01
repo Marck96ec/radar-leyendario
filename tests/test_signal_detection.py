@@ -10,7 +10,7 @@ from app.domain.event import Event
 from app.domain.source_item import SourceItem
 from app.graph.nodes.detect_signals import detect_signals as detect_signals_node
 from app.graph.radar_graph import build_radar_graph
-from app.infrastructure.llm.signal_detection import (
+from app.services.models.signal_detection import (
     SignalCandidate,
     SignalDetectionResponse,
 )
