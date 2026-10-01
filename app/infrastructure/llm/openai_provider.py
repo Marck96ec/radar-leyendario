@@ -12,7 +12,7 @@ class OpenAILLMProvider(LLMProvider):
     def __init__(self, settings: Settings) -> None:
         self._model = ChatOpenAI(
             model=settings.LLM_MODEL,
-            api_key=settings.OPENAI_API_KEY,
+            api_key=settings.OPENAI_API_KEY.get_secret_value(),
         )
 
     async def structured_completion(

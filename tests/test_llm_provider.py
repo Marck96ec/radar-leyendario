@@ -1,7 +1,7 @@
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 from app.core.settings import Settings
 from app.infrastructure.llm.openai_provider import OpenAILLMProvider
@@ -18,8 +18,16 @@ def test_settings_accepts_openai_configuration(monkeypatch: pytest.MonkeyPatch) 
 
     settings = Settings()
 
-    assert settings.OPENAI_API_KEY == "test-key"
+    assert isinstance(settings.OPENAI_API_KEY, SecretStr)
+    assert settings.OPENAI_API_KEY.get_secret_value() == "test-key"
     assert settings.LLM_MODEL == "test-model"
+
+
+def test_settings_repr_does_not_expose_openai_api_key() -> None:
+    secret = "test-key-that-must-stay-secret"
+    settings = Settings(OPENAI_API_KEY=secret, LLM_MODEL="test-model")
+
+    assert secret not in repr(settings)
 
 
 def test_provider_uses_configured_model() -> None:

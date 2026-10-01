@@ -1,8 +1,9 @@
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    OPENAI_API_KEY: str
+    OPENAI_API_KEY: SecretStr
     LLM_MODEL: str
 
     model_config = SettingsConfigDict(
