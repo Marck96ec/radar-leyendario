@@ -5,6 +5,9 @@ import pytest
 from app.graph.nodes.collect_sources import collect_sources
 from app.graph.radar_graph import build_radar_graph
 from app.graph.state import RadarState
+from app.domain.source_item import SourceItem
+from app.domain.enums import SourceType
+from datetime import datetime, timezone
 
 
 EXPECTED_TRACE = [
@@ -55,11 +58,42 @@ async def test_empty_state_traverses_the_complete_placeholder_workflow() -> None
     assert result["ranked_opportunities"] == []
 
 
-def test_node_does_not_mutate_received_state() -> None:
+@pytest.mark.asyncio
+async def test_node_does_not_mutate_received_state() -> None:
     state = build_empty_state()
     original_state = deepcopy(state)
 
-    result = collect_sources(state)
+    result = await collect_sources(state)
 
     assert state == original_state
-    assert result == {"metadata": {"execution_trace": ["collect_sources"]}}
+    assert result == {
+        "source_items": [],
+        "metadata": {"execution_trace": ["collect_sources"], "source_count": 0},
+    }
+
+
+class FakeSourceProvider:
+    def __init__(self, source_items: list[SourceItem]) -> None:
+        self.source_items = source_items
+
+    async def fetch(self) -> list[SourceItem]:
+        return self.source_items
+
+
+@pytest.mark.asyncio
+async def test_injected_source_provider_returns_partial_state_and_source_count() -> None:
+    source_item = SourceItem(
+        title="A publication",
+        url="https://example.test/publication",
+        source_name="Example",
+        published_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        content="Content",
+        source_type=SourceType.MEDIA,
+    )
+    state = build_empty_state()
+
+    result = await build_radar_graph(source_provider=FakeSourceProvider([source_item])).ainvoke(state)
+
+    assert result["source_items"] == [source_item]
+    assert result["metadata"]["source_count"] == 1
+    assert result["metadata"]["execution_trace"] == EXPECTED_TRACE

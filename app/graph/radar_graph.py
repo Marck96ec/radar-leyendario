@@ -2,7 +2,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from app.graph.nodes.cluster_events import cluster_events
-from app.graph.nodes.collect_sources import collect_sources
+from app.graph.nodes.collect_sources import build_collect_sources_node
 from app.graph.nodes.detect_signals import build_detect_signals_node
 from app.graph.nodes.generate_opportunities import generate_opportunities
 from app.graph.nodes.normalize_sources import normalize_sources
@@ -10,14 +10,16 @@ from app.graph.nodes.rank_opportunities import rank_opportunities
 from app.graph.nodes.validate_evidence import validate_evidence
 from app.graph.state import RadarState
 from app.services.ports.llm import LLMProvider
+from app.services.ports.source import SourceProvider
 
 
 def build_radar_graph(
     llm_provider: LLMProvider | None = None,
+    source_provider: SourceProvider | None = None,
 ) -> CompiledStateGraph:
     graph = StateGraph(RadarState)
 
-    graph.add_node("collect_sources", collect_sources)
+    graph.add_node("collect_sources", build_collect_sources_node(source_provider))
     graph.add_node("normalize_sources", normalize_sources)
     graph.add_node("cluster_events", cluster_events)
     graph.add_node("detect_signals", build_detect_signals_node(llm_provider))
