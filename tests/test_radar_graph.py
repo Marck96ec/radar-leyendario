@@ -58,14 +58,18 @@ async def test_empty_state_traverses_the_complete_placeholder_workflow() -> None
     assert result["ranked_opportunities"] == []
 
 
-def test_node_does_not_mutate_received_state() -> None:
+@pytest.mark.asyncio
+async def test_node_does_not_mutate_received_state() -> None:
     state = build_empty_state()
     original_state = deepcopy(state)
 
-    result = collect_sources(state)
+    result = await collect_sources(state)
 
     assert state == original_state
-    assert result == {"metadata": {"execution_trace": ["collect_sources"]}}
+    assert result == {
+        "source_items": [],
+        "metadata": {"execution_trace": ["collect_sources"], "source_count": 0},
+    }
 
 
 class FakeSourceProvider:
