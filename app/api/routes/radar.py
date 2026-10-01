@@ -1,8 +1,10 @@
 from typing import cast
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from app.core.dependencies import get_llm_provider
+from app.services.ports.llm import LLMProvider
 from app.services.radar_runner import run_radar
 
 
@@ -20,8 +22,10 @@ class RadarRunResponse(BaseModel):
 
 
 @router.post("/run", response_model=RadarRunResponse)
-async def run_radar_endpoint() -> RadarRunResponse:
-    state = await run_radar()
+async def run_radar_endpoint(
+    llm_provider: LLMProvider = Depends(get_llm_provider),
+) -> RadarRunResponse:
+    state = await run_radar(llm_provider)
     execution_trace = cast(list[str], state["metadata"].get("execution_trace", []))
 
     return RadarRunResponse(
