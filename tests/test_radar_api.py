@@ -1,11 +1,23 @@
 from uuid import UUID
 
 from fastapi.testclient import TestClient
+from pydantic import BaseModel
 
+from app.core.dependencies import get_llm_provider
 from app.main import app
 
 
 client = TestClient(app)
+
+
+class FakeLLMProvider:
+    async def structured_completion(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        response_model: type[BaseModel],
+    ) -> BaseModel:
+        raise AssertionError("the empty workflow should not call the LLM")
 EXPECTED_TRACE = [
     "collect_sources",
     "normalize_sources",
@@ -18,7 +30,11 @@ EXPECTED_TRACE = [
 
 
 def test_run_radar_executes_the_complete_workflow() -> None:
-    response = client.post("/api/v1/radar/run")
+    app.dependency_overrides[get_llm_provider] = lambda: FakeLLMProvider()
+    try:
+        response = client.post("/api/v1/radar/run")
+    finally:
+        app.dependency_overrides.clear()
 
     assert response.status_code == 200
     payload = response.json()
