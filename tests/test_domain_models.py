@@ -81,6 +81,7 @@ def test_opportunity_is_created_and_allows_missing_final_score() -> None:
         content_potential=95,
         business_potential=40,
         evidence_confidence=85,
+        signal_id=uuid4(),
     )
 
     assert isinstance(opportunity.id, UUID)
@@ -158,6 +159,7 @@ def test_opportunity_rejects_each_score_outside_range(
         "content_potential": 50,
         "business_potential": 50,
         "evidence_confidence": 50,
+        "signal_id": uuid4(),
         "final_score": 50,
     }
     opportunity_data[score_field] = score

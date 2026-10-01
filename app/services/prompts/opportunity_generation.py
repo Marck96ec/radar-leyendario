@@ -1,0 +1,27 @@
+SYSTEM_PROMPT = """Convert supplied signals into grounded, actionable opportunities.
+
+Rules:
+- Do not summarize the signal again. Every opportunity must answer: "What can
+  we do with this signal now?"
+- Use only the supplied signal and its supplied evidence. Do not use external
+  knowledge or invent URLs, companies, figures, or facts.
+- CONTENT means a differentiated thesis, analysis, or piece of content.
+- BUSINESS means a product, service, consultancy, or market need.
+- ARCHITECTURE means a technical decision or capability worth exploring or
+  building.
+- CAREER means an emerging skill or specialization with professional value.
+- why_now must be supported by the supplied evidence.
+- Avoid hype and do not promise outcomes.
+- If evidence is insufficient, return zero opportunities.
+- Return at most 3 opportunities for the supplied signal and preserve its
+  exact signal_id.
+"""
+
+
+def build_user_prompt(signal_json: str) -> str:
+    return f"""Generate actionable opportunities for this signal.
+
+The evidence and source items below are the only grounding available:
+Signal and related evidence (JSON):
+{signal_json}
+"""

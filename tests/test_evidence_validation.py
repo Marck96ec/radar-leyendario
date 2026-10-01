@@ -22,6 +22,10 @@ from app.services.models.evidence_validation import (
     EvidenceCandidate,
     EvidenceValidationResponse,
 )
+from app.services.models.opportunity_generation import (
+    OpportunityCandidate,
+    OpportunityGenerationResponse,
+)
 from app.services.models.signal_detection import (
     SignalCandidate,
     SignalDetectionResponse,
@@ -279,6 +283,25 @@ async def test_workflow_uses_one_offline_provider_for_all_structured_steps() -> 
                         )
                     ]
                 )
+            if response_model is OpportunityGenerationResponse:
+                payload = json.loads(user_prompt.split("(JSON):\n", 1)[1])
+                return OpportunityGenerationResponse(
+                    opportunities=[
+                        OpportunityCandidate(
+                            signal_id=payload["signal"]["id"],
+                            title="Explore the workflow shift",
+                            description="Build a grounded workflow around the shift.",
+                            why_now="The workflow source describes the shift now.",
+                            category="ARCHITECTURE",
+                            impact_score=80,
+                            timing_score=75,
+                            novelty_score=70,
+                            content_potential=60,
+                            business_potential=65,
+                            evidence_confidence=88,
+                        )
+                    ]
+                )
             raise AssertionError(f"Unsupported response model: {response_model}")
 
     provider = WorkflowFakeLLMProvider()
@@ -289,8 +312,11 @@ async def test_workflow_uses_one_offline_provider_for_all_structured_steps() -> 
     ).ainvoke(build_state())
 
     assert len(result["evidence"]) == 1
+    assert len(result["opportunities"]) == 1
+    assert result["opportunities"][0].final_score is None
     assert [call["response_model"] for call in provider.calls] == [
         EventClusteringResponse,
         SignalDetectionResponse,
         EvidenceValidationResponse,
+        OpportunityGenerationResponse,
     ]
