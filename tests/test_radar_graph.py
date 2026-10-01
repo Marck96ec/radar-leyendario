@@ -1,5 +1,7 @@
 from copy import deepcopy
 
+import pytest
+
 from app.graph.nodes.collect_sources import collect_sources
 from app.graph.radar_graph import build_radar_graph
 from app.graph.state import RadarState
@@ -30,16 +32,18 @@ def build_empty_state(run_id: str = "run-001") -> RadarState:
     }
 
 
-def test_build_radar_graph_produces_an_invocable_graph() -> None:
+@pytest.mark.asyncio
+async def test_build_radar_graph_produces_an_invocable_graph() -> None:
     graph = build_radar_graph()
 
-    assert graph.invoke(build_empty_state()) is not None
+    assert await graph.ainvoke(build_empty_state()) is not None
 
 
-def test_empty_state_traverses_the_complete_placeholder_workflow() -> None:
+@pytest.mark.asyncio
+async def test_empty_state_traverses_the_complete_placeholder_workflow() -> None:
     state = build_empty_state("run-002")
 
-    result = build_radar_graph().invoke(state)
+    result = await build_radar_graph().ainvoke(state)
 
     assert result["run_id"] == "run-002"
     assert result["metadata"]["execution_trace"] == EXPECTED_TRACE
