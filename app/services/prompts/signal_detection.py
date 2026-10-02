@@ -14,6 +14,9 @@ Rules:
 - Prioritize useful signals for software development, architecture, AI agents,
   and business decisions.
 - Return at most five signals.
+- ALL SCORE FIELDS USE A 0 TO 100 SCALE. Examples: 90 means very high, 75
+  means high, 50 means medium, and 10 means low. Do NOT return normalized
+  values such as 0.90 or 0.75. Return 90 or 75 instead.
 """
 
 

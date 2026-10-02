@@ -11,6 +11,7 @@ from app.services.prompts.opportunity_generation import (
     SYSTEM_PROMPT,
     build_user_prompt,
 )
+from app.services.score_normalization import normalize_percentage_score
 
 
 def _serialize_signal_grounding(
@@ -100,12 +101,18 @@ async def generate_opportunities(
                     description=candidate.description,
                     why_now=candidate.why_now,
                     category=candidate.category,
-                    impact_score=candidate.impact_score,
-                    timing_score=candidate.timing_score,
-                    novelty_score=candidate.novelty_score,
-                    content_potential=candidate.content_potential,
-                    business_potential=candidate.business_potential,
-                    evidence_confidence=candidate.evidence_confidence,
+                    impact_score=normalize_percentage_score(candidate.impact_score),
+                    timing_score=normalize_percentage_score(candidate.timing_score),
+                    novelty_score=normalize_percentage_score(candidate.novelty_score),
+                    content_potential=normalize_percentage_score(
+                        candidate.content_potential
+                    ),
+                    business_potential=normalize_percentage_score(
+                        candidate.business_potential
+                    ),
+                    evidence_confidence=normalize_percentage_score(
+                        candidate.evidence_confidence
+                    ),
                 )
             )
 

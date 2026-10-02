@@ -129,6 +129,36 @@ async def test_valid_candidate_becomes_traceable_domain_opportunity() -> None:
 
 
 @pytest.mark.asyncio
+async def test_normalized_candidate_scores_become_domain_percentages() -> None:
+    signal = build_signal()
+    source = build_source()
+    candidate = build_candidate(signal.id, OpportunityCategory.CONTENT).model_copy(
+        update={
+            "impact_score": 0.8,
+            "timing_score": 0.9,
+            "novelty_score": 0.95,
+            "content_potential": 0.5,
+            "business_potential": 80,
+            "evidence_confidence": 90,
+        }
+    )
+    provider = FakeLLMProvider(
+        OpportunityGenerationResponse(opportunities=[candidate])
+    )
+
+    opportunities = await generate_opportunities(
+        [signal], [build_evidence(signal, source)], [source], provider
+    )
+
+    assert opportunities[0].impact_score == 80
+    assert opportunities[0].timing_score == 90
+    assert opportunities[0].novelty_score == 95
+    assert opportunities[0].content_potential == 50
+    assert opportunities[0].business_potential == 80
+    assert opportunities[0].evidence_confidence == 90
+
+
+@pytest.mark.asyncio
 async def test_unknown_signal_ids_are_discarded_and_grounding_is_signal_local() -> None:
     signal = build_signal()
     source = build_source()
