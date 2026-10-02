@@ -81,10 +81,27 @@ def test_opportunity_is_created_and_allows_missing_final_score() -> None:
         content_potential=95,
         business_potential=40,
         evidence_confidence=85,
+        signal_id=uuid4(),
     )
 
     assert isinstance(opportunity.id, UUID)
     assert opportunity.final_score is None
+
+
+def test_opportunity_requires_signal_id() -> None:
+    with pytest.raises(ValidationError):
+        Opportunity(
+            title="An opportunity",
+            description="An opportunity without a signal.",
+            why_now="The pattern is newly visible.",
+            category=OpportunityCategory.CONTENT,
+            impact_score=80,
+            timing_score=90,
+            novelty_score=70,
+            content_potential=95,
+            business_potential=40,
+            evidence_confidence=85,
+        )
 
 
 @pytest.mark.parametrize(
@@ -158,6 +175,7 @@ def test_opportunity_rejects_each_score_outside_range(
         "content_potential": 50,
         "business_potential": 50,
         "evidence_confidence": 50,
+        "signal_id": uuid4(),
         "final_score": 50,
     }
     opportunity_data[score_field] = score
@@ -221,6 +239,7 @@ def test_domain_models_reject_extra_fields(
         },
         "opportunity": {
             "title": "Create an analysis",
+            "signal_id": uuid4(),
             "description": "Publish an analysis of the signal.",
             "why_now": "The pattern is newly visible.",
             "category": OpportunityCategory.CONTENT,
@@ -292,6 +311,7 @@ def test_critical_strings_reject_empty_values(
         },
         "opportunity": {
             "title": "Create an analysis",
+            "signal_id": uuid4(),
             "description": "Publish an analysis of the signal.",
             "why_now": "The pattern is newly visible.",
             "category": OpportunityCategory.CONTENT,
@@ -336,6 +356,7 @@ def test_invalid_enums_are_rejected(
     with pytest.raises(ValidationError):
         Opportunity(
             title="Invalid opportunity",
+            signal_id=uuid4(),
             description="Invalid enum.",
             why_now="Now.",
             category="invalid",

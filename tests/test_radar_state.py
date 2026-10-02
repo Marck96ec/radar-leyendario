@@ -33,6 +33,7 @@ def build_opportunity(title: str) -> Opportunity:
         content_potential=95,
         business_potential=40,
         evidence_confidence=85,
+        signal_id=uuid4(),
     )
 
 

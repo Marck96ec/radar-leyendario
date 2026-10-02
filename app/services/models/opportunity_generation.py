@@ -1,16 +1,15 @@
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.enums import OpportunityCategory
 
 
-class Opportunity(BaseModel):
+class OpportunityCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    id: UUID = Field(default_factory=uuid4)
-    title: str = Field(min_length=1)
     signal_id: UUID
+    title: str = Field(min_length=1)
     description: str = Field(min_length=1)
     why_now: str = Field(min_length=1)
     category: OpportunityCategory
@@ -20,4 +19,9 @@ class Opportunity(BaseModel):
     content_potential: float = Field(ge=0, le=100)
     business_potential: float = Field(ge=0, le=100)
     evidence_confidence: float = Field(ge=0, le=100)
-    final_score: float | None = Field(default=None, ge=0, le=100)
+
+
+class OpportunityGenerationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    opportunities: list[OpportunityCandidate] = Field(max_length=3)
