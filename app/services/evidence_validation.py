@@ -10,6 +10,7 @@ from app.services.prompts.evidence_validation import (
     SYSTEM_PROMPT,
     build_user_prompt,
 )
+from app.services.score_normalization import normalize_percentage_score
 
 
 def _build_eligible_sources(
@@ -115,7 +116,7 @@ async def validate_evidence(
                 source_item_id=candidate.source_item_id,
                 evidence_type=candidate.evidence_type,
                 explanation=candidate.explanation,
-                confidence=candidate.confidence,
+                confidence=normalize_percentage_score(candidate.confidence),
             )
         )
 

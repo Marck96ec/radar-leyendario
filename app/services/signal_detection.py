@@ -9,6 +9,7 @@ from app.services.prompts.signal_detection import (
 )
 from app.services.models.signal_detection import SignalDetectionResponse
 from app.services.ports.llm import LLMProvider
+from app.services.score_normalization import normalize_percentage_score
 
 
 def _serialize_events(events: list[Event]) -> str:
@@ -54,9 +55,9 @@ async def detect_signals(
             Signal(
                 title=candidate.title,
                 description=candidate.description,
-                relevance_score=candidate.relevance_score,
-                novelty_score=candidate.novelty_score,
-                confidence_score=candidate.confidence_score,
+                relevance_score=normalize_percentage_score(candidate.relevance_score),
+                novelty_score=normalize_percentage_score(candidate.novelty_score),
+                confidence_score=normalize_percentage_score(candidate.confidence_score),
                 topics=candidate.topics,
                 related_event_ids=related_event_ids,
             )

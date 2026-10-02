@@ -135,6 +135,29 @@ async def test_valid_supporting_and_counter_evidence_become_domain_models() -> N
 
 
 @pytest.mark.asyncio
+async def test_normalized_confidence_becomes_domain_percentage() -> None:
+    source = build_source("Normalized report")
+    event = Event(title="An event", summary="Event summary", source_items=[source])
+    signal = build_signal(event)
+    response = EvidenceValidationResponse(
+        evidence=[
+            EvidenceCandidate(
+                signal_id=signal.id,
+                source_item_id=source.id,
+                evidence_type=EvidenceType.SUPPORTING,
+                explanation="The report describes the change in the signal.",
+                confidence=0.99,
+            )
+        ]
+    )
+    provider = FakeLLMProvider({EvidenceValidationResponse: response})
+
+    evidence = await validate_evidence([signal], [event], provider)
+
+    assert evidence[0].confidence == 99
+
+
+@pytest.mark.asyncio
 async def test_invalid_ids_unrelated_sources_and_duplicates_are_discarded() -> None:
     source = build_source("Eligible report")
     unrelated_source = build_source("Unrelated report")

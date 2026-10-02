@@ -15,6 +15,9 @@ Rules:
 - If evidence is insufficient, return zero opportunities.
 - Return at most 3 opportunities for the supplied signal and preserve its
   exact signal_id.
+- ALL SCORE FIELDS USE A 0 TO 100 SCALE. Examples: 90 means very high, 75
+  means high, 50 means medium, and 10 means low. Do NOT return normalized
+  values such as 0.90 or 0.75. Return 90 or 75 instead.
 """
 
 

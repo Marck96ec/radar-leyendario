@@ -86,6 +86,27 @@ async def test_events_become_signal_with_domain_uuid_and_preserved_scores() -> N
 
 
 @pytest.mark.asyncio
+async def test_normalized_candidate_scores_become_domain_percentages() -> None:
+    event = build_event("Agents gain autonomy")
+    candidate = SignalCandidate(
+        title="A normalized signal",
+        description="The supplied event supports this signal.",
+        relevance_score=0.9,
+        novelty_score=0.87,
+        confidence_score=0.99,
+        topics=["agents"],
+        related_event_ids=[event.id],
+    )
+    provider = FakeLLMProvider(SignalDetectionResponse(signals=[candidate]))
+
+    signals = await detect_signals([event], provider)
+
+    assert signals[0].relevance_score == 90
+    assert signals[0].novelty_score == 87
+    assert signals[0].confidence_score == 99
+
+
+@pytest.mark.asyncio
 async def test_unknown_related_event_ids_are_filtered() -> None:
     event = build_event("A real event")
     candidate = SignalCandidate(
