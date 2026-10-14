@@ -57,7 +57,23 @@ def test_selection_round_robins_sources_and_caps_each_source() -> None:
 def test_selection_fills_from_single_source_when_no_other_source_exists() -> None:
     selected = select_balanced_items([build_item("AWS", index) for index in range(10)])
 
-    assert len(selected) == 8
+    assert len(selected) == 2
     assert [item.title for item in selected] == [
-        f"AWS article {index}" for index in range(8)
+        f"AWS article {index}" for index in range(2)
     ]
+
+
+def test_selection_never_exceeds_twelve_articles() -> None:
+    items = [
+        build_item(f"Source {source_index}", article_index)
+        for source_index in range(10)
+        for article_index in range(4)
+    ]
+
+    selected = select_balanced_items(items)
+
+    assert len(selected) == 12
+    assert all(
+        sum(item.source_name == source for item in selected) <= 2
+        for source in {item.source_name for item in selected}
+    )

@@ -81,3 +81,45 @@ async def test_invalid_entries_and_failed_feeds_are_skipped() -> None:
         items = await RSSSourceProvider([FEED_ONE, FEED_TWO]).fetch()
 
     assert [item.title for item in items] == ["Valid"]
+
+
+@pytest.mark.asyncio
+async def test_invalid_rss_document_is_rejected_and_reported() -> None:
+    invalid_html = SimpleNamespace(entries=[], bozo=False, version="")
+
+    with patch(
+        "app.infrastructure.sources.rss_provider.feedparser.parse",
+        return_value=invalid_html,
+    ):
+        provider = RSSSourceProvider([FEED_ONE])
+        items = await provider.fetch()
+
+    assert items == []
+    assert provider.last_report[0]["status"] == "invalid"
+    assert provider.last_report[0]["articles_recovered"] == 0
+
+
+@pytest.mark.asyncio
+async def test_partial_feed_failure_does_not_hide_successful_feed_report() -> None:
+    valid = SimpleNamespace(
+        entries=[
+            {
+                "title": "Valid",
+                "link": "https://example.test/valid",
+            }
+        ],
+        bozo=False,
+        version="rss20",
+    )
+
+    def parse(url: str) -> SimpleNamespace:
+        if url == FEED_TWO.url:
+            raise OSError("feed unavailable")
+        return valid
+
+    with patch("app.infrastructure.sources.rss_provider.feedparser.parse", side_effect=parse):
+        provider = RSSSourceProvider([FEED_ONE, FEED_TWO])
+        items = await provider.fetch()
+
+    assert len(items) == 1
+    assert [report["status"] for report in provider.last_report] == ["ok", "error"]

@@ -5,6 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     OPENAI_API_KEY: SecretStr
     LLM_MODEL: str
+    RADAR_RUN_DATABASE_PATH: str = "radar_runs.sqlite3"
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -1,9 +1,12 @@
 from uuid import UUID
+from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
-from app.core.dependencies import get_llm_provider
+from app.core.dependencies import get_llm_provider, get_source_provider
+from app.domain.enums import SourceType
+from app.domain.source_item import SourceItem
 from app.main import app
 
 
@@ -18,6 +21,41 @@ class FakeLLMProvider:
         response_model: type[BaseModel],
     ) -> BaseModel:
         raise AssertionError("the empty workflow should not call the LLM")
+
+
+class EmptySourceProvider:
+    async def fetch(self) -> list[object]:
+        return []
+
+
+class StaticSourceProvider:
+    async def fetch(self) -> list[SourceItem]:
+        return [
+            SourceItem(
+                title="Simulated publication",
+                url="https://example.test/simulated",
+                source_name="Simulated source",
+                published_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
+                content="Simulated content",
+                source_type=SourceType.OFFICIAL,
+            )
+        ]
+
+
+class EmptyPipelineLLMProvider:
+    async def structured_completion(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        response_model: type[BaseModel],
+    ) -> BaseModel:
+        empty_payloads = {
+            "EventClusteringResponse": {"clusters": []},
+            "SignalDetectionResponse": {"signals": []},
+            "EvidenceValidationResponse": {"evidence": []},
+            "OpportunityGenerationResponse": {"opportunities": []},
+        }
+        return response_model.model_validate(empty_payloads[response_model.__name__])
 EXPECTED_TRACE = [
     "collect_sources",
     "normalize_sources",
@@ -31,6 +69,7 @@ EXPECTED_TRACE = [
 
 def test_run_radar_executes_the_complete_workflow() -> None:
     app.dependency_overrides[get_llm_provider] = lambda: FakeLLMProvider()
+    app.dependency_overrides[get_source_provider] = lambda: EmptySourceProvider()
     try:
         response = client.post("/api/v1/radar/run")
     finally:
@@ -55,3 +94,16 @@ def test_health_endpoint_remains_unchanged() -> None:
         "status": "ok",
         "service": "radar-leyendario",
     }
+
+
+def test_run_radar_accepts_simulated_sources_without_changing_response_contract() -> None:
+    app.dependency_overrides[get_llm_provider] = lambda: EmptyPipelineLLMProvider()
+    app.dependency_overrides[get_source_provider] = lambda: StaticSourceProvider()
+    try:
+        response = client.post("/api/v1/radar/run")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    assert response.json()["sources"] == 1

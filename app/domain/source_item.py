@@ -16,3 +16,4 @@ class SourceItem(BaseModel):
     published_at: datetime
     content: str = Field(min_length=1)
     source_type: SourceType
+    category: str | None = None

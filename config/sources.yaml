@@ -1,0 +1,117 @@
+sources:
+  - id: openai
+    name: OpenAI
+    url: https://openai.com/news/rss.xml
+    category: MODELS_AGENTS
+    source_type: OFFICIAL
+    enabled: true
+    format: rss
+  - id: anthropic
+    name: Anthropic
+    url: https://www.anthropic.com/news
+    category: MODELS_AGENTS
+    source_type: OFFICIAL
+    enabled: false
+    format: html
+    reason: Candidate URL returns HTML and no official RSS or Atom feed was verified.
+  - id: google-deepmind
+    name: Google DeepMind
+    url: https://deepmind.google/blog/rss.xml
+    category: MODELS_AGENTS
+    source_type: OFFICIAL
+    enabled: true
+    format: rss
+  - id: hugging-face
+    name: Hugging Face
+    url: https://huggingface.co/blog/feed.xml
+    category: MODELS_AGENTS
+    source_type: COMMUNITY
+    enabled: true
+    format: rss
+  - id: github-ai
+    name: GitHub AI
+    url: https://github.blog/ai-and-ml/feed/
+    category: SOFTWARE_ARCHITECTURE
+    source_type: OFFICIAL
+    enabled: true
+    format: rss
+  - id: infoq-ai
+    name: InfoQ
+    url: https://www.infoq.com/ai/
+    category: SOFTWARE_ARCHITECTURE
+    source_type: MEDIA
+    enabled: false
+    format: html
+    reason: Candidate URL returns HTML and no official RSS or Atom feed was verified.
+  - id: cncf
+    name: CNCF
+    url: https://www.cncf.io/feed/
+    category: SOFTWARE_ARCHITECTURE
+    source_type: OFFICIAL
+    enabled: true
+    format: rss
+  - id: langchain
+    name: LangChain
+    url: https://blog.langchain.dev/rss.xml
+    category: SOFTWARE_ARCHITECTURE
+    source_type: COMMUNITY
+    enabled: true
+    format: rss
+  - id: aws-machine-learning
+    name: AWS ML
+    url: https://aws.amazon.com/blogs/machine-learning/feed/
+    category: CLOUD_INFRASTRUCTURE
+    source_type: OFFICIAL
+    enabled: true
+    format: rss
+  - id: microsoft-tech
+    name: Microsoft Tech
+    url: https://techcommunity.microsoft.com/
+    category: CLOUD_INFRASTRUCTURE
+    source_type: OFFICIAL
+    enabled: false
+    format: html
+    reason: Candidate URL returns HTML and no official RSS or Atom feed was verified.
+  - id: google-cloud-ai
+    name: Google Cloud AI
+    url: https://cloud.google.com/blog/products/ai-machine-learning
+    category: CLOUD_INFRASTRUCTURE
+    source_type: OFFICIAL
+    enabled: false
+    format: html
+    reason: Candidate URL returns HTML and no official RSS or Atom feed was verified.
+  - id: nvidia
+    name: NVIDIA
+    url: https://developer.nvidia.com/blog/feed/
+    category: CLOUD_INFRASTRUCTURE
+    source_type: OFFICIAL
+    enabled: true
+    format: atom
+  - id: arxiv-ai
+    name: arXiv AI
+    url: https://rss.arxiv.org/rss/cs.AI
+    category: RESEARCH
+    source_type: COMMUNITY
+    enabled: true
+    format: rss
+  - id: microsoft-research
+    name: Microsoft Research
+    url: https://www.microsoft.com/en-us/research/feed/
+    category: RESEARCH
+    source_type: OFFICIAL
+    enabled: true
+    format: rss
+  - id: techcrunch-ai
+    name: TechCrunch AI
+    url: https://techcrunch.com/category/artificial-intelligence/feed/
+    category: BUSINESS
+    source_type: MEDIA
+    enabled: true
+    format: rss
+  - id: mit-technology-review-ai
+    name: MIT Technology Review
+    url: https://www.technologyreview.com/feed/
+    category: BUSINESS
+    source_type: MEDIA
+    enabled: true
+    format: rss

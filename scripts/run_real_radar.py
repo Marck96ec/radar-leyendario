@@ -10,67 +10,13 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.core.settings import get_settings
-from app.domain.enums import SourceType
 from app.domain.source_item import SourceItem
 from app.infrastructure.llm.openai_provider import OpenAILLMProvider
-from app.infrastructure.sources.config import RSSFeedConfig
+from app.infrastructure.sources.config import load_enabled_feeds
 from app.infrastructure.sources.rss_provider import RSSSourceProvider
 from app.services.ports.source import SourceProvider
 from app.services.radar_runner import run_radar
-
-
-MAX_ITEMS = 8
-MAX_PER_SOURCE = 2
-
-
-def select_balanced_items(source_items: list[SourceItem]) -> list[SourceItem]:
-    items_by_source: dict[str, list[SourceItem]] = {}
-    for item in source_items:
-        items_by_source.setdefault(item.source_name, []).append(item)
-
-    for items in items_by_source.values():
-        items.sort(key=lambda item: item.published_at, reverse=True)
-
-    selected: list[SourceItem] = []
-    selected_urls: set[str] = set()
-    selected_per_source: Counter[str] = Counter()
-    source_positions: dict[str, int] = dict.fromkeys(items_by_source, 0)
-    source_names = sorted(items_by_source)
-
-    while len(selected) < MAX_ITEMS:
-        added_in_round = False
-        for source_name in source_names:
-            if selected_per_source[source_name] >= MAX_PER_SOURCE:
-                continue
-
-            items = items_by_source[source_name]
-            while source_positions[source_name] < len(items):
-                item = items[source_positions[source_name]]
-                source_positions[source_name] += 1
-                if item.url in selected_urls:
-                    continue
-                selected.append(item)
-                selected_urls.add(item.url)
-                selected_per_source[source_name] += 1
-                added_in_round = True
-                break
-
-            if len(selected) == MAX_ITEMS:
-                return selected
-
-        if not added_in_round:
-            break
-
-    remaining_items = sorted(source_items, key=lambda item: item.published_at, reverse=True)
-    for item in remaining_items:
-        if len(selected) == MAX_ITEMS:
-            break
-        if item.url in selected_urls:
-            continue
-        selected.append(item)
-        selected_urls.add(item.url)
-
-    return selected
+from app.services.source_selection import select_balanced_items
 
 
 class StaticSourceProvider:
@@ -82,30 +28,7 @@ class StaticSourceProvider:
 
 
 async def main() -> None:
-    feeds = [
-        RSSFeedConfig(
-            name="Google AI",
-            url="https://blog.google/technology/ai/rss/",
-            source_type=SourceType.OFFICIAL,
-        ),
-        RSSFeedConfig(
-            name="GitHub AI & ML",
-            url="https://github.blog/ai-and-ml/feed/",
-            source_type=SourceType.OFFICIAL,
-        ),
-        RSSFeedConfig(
-            name="AWS Machine Learning",
-            url="https://aws.amazon.com/blogs/machine-learning/feed/",
-            source_type=SourceType.OFFICIAL,
-        ),
-        RSSFeedConfig(
-            name="NVIDIA Developer Blog",
-            url="https://developer.nvidia.com/blog/feed/",
-            source_type=SourceType.OFFICIAL,
-        ),
-    ]
-
-    rss_provider = RSSSourceProvider(feeds)
+    rss_provider = RSSSourceProvider(load_enabled_feeds())
     fetched_items = await rss_provider.fetch()
     analyzed_items = select_balanced_items(fetched_items)
 
