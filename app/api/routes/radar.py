@@ -154,8 +154,12 @@ def _opportunity_response(
         business_potential=opportunity.business_potential,
         evidence_confidence=opportunity.evidence_confidence,
         final_score=opportunity.final_score,
-        evidences=[EvidenceResponse.model_validate(item) for item in evidences],
-        sources=[SourceResponse.model_validate(item) for item in sources],
+        evidences=[
+            EvidenceResponse.model_validate(item.model_dump()) for item in evidences
+        ],
+        sources=[
+            SourceResponse.model_validate(item.model_dump()) for item in sources
+        ],
     )
 
 
