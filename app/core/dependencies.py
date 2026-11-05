@@ -23,6 +23,9 @@ def build_source_provider(settings: Settings | None = None) -> SourceProvider:
     return RSSSourceProvider(
         load_rss_feeds(resolved_settings.RSS_FEEDS),
         timeout_seconds=resolved_settings.RSS_TIMEOUT_SECONDS,
+        max_items_per_feed=resolved_settings.RSS_MAX_ITEMS_PER_FEED,
+        max_item_age_hours=resolved_settings.RSS_MAX_ITEM_AGE_HOURS,
+        max_total_items=resolved_settings.RSS_MAX_TOTAL_ITEMS,
     )
 
 

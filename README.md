@@ -47,6 +47,9 @@ se versiona ni se incluye en la imagen.
 | `LLM_MODEL` | Sí para fuentes con LLM | Modelo usado por el proveedor OpenAI. |
 | `RSS_FEEDS` | Recomendada | Array JSON de objetos `name`, `url` y `source_type` (`OFFICIAL`, `MEDIA` o `COMMUNITY`). |
 | `RSS_TIMEOUT_SECONDS` | No | Timeout por fuente, entre 0 y 120 segundos; por defecto 15. |
+| `RSS_MAX_ITEMS_PER_FEED` | No | Máximo de artículos más recientes retenidos por cada fuente RSS; por defecto 10. |
+| `RSS_MAX_ITEM_AGE_HOURS` | No | Antigüedad máxima (en horas) de un artículo para ser considerado; por defecto 72. |
+| `RSS_MAX_TOTAL_ITEMS` | No | Máximo global de artículos que ingresan al grafo tras combinar todas las fuentes; por defecto 50. |
 | `RADAR_API_KEY` | Sí | Clave interna enviada como `X-Radar-API-Key` para `/api/v1/radar/*`. |
 | `ENVIRONMENT` | Sí | Usar `production` en VPS; producción sin `RADAR_API_KEY` queda bloqueada. |
 | `RUNS_DATABASE_PATH` | No | Ruta SQLite; en Compose es `/app/data/radar_runs.sqlite3`. |
@@ -74,6 +77,34 @@ construir el proveedor, en vez de iniciar silenciosamente con una fuente
 incorrecta. Los errores de red, timeout y parser se registran por fuente y se
 exponen en `metadata.source_failures` de la ejecución; no se fabrican noticias
 ni evidencias.
+
+### Control de volumen y antigüedad de artículos RSS
+
+Antes de que cualquier artículo llegue al primer nodo del grafo que invoca un
+LLM (`cluster_events`), `RSSSourceProvider` aplica, por cada fuente RSS
+configurada:
+
+1. **Deduplicación por URL** (canónica, sin fragmento): se conserva la primera
+   aparición de cada artículo.
+2. **Orden por fecha de publicación** (`published_at`), no por la posición en
+   el feed. Un artículo sin fecha válida se trata como fecha desconocida
+   (internamente, época UNIX) y nunca se asume reciente, por lo que queda al
+   final del orden y es el primero en descartarse.
+3. **Filtro de antigüedad** (`RSS_MAX_ITEM_AGE_HOURS`): descarta artículos más
+   antiguos que la ventana configurada.
+4. **Tope por fuente** (`RSS_MAX_ITEMS_PER_FEED`): conserva como máximo los N
+   artículos más recientes de cada feed.
+5. **Tope global** (`RSS_MAX_TOTAL_ITEMS`): combina los artículos de todas las
+   fuentes ya filtrados, los reordena por fecha y conserva como máximo N en
+   total antes de pasarlos a `collect_sources`.
+
+Cada fuente registra en el log (`RSS source volume`) cuántos artículos se
+recuperaron, cuántos se aceptaron y cuántos se descartaron, de forma que el
+volumen enviado al LLM es auditable sin necesidad de inspeccionar el feed
+original. Los tres límites son configurables por variable de entorno y se
+pueden ampliar o reducir sin tocar código; esto evita, por ejemplo, que una
+fuente con cientos de entradas históricas (como el feed de OpenAI) sature el
+grafo mientras se mantienen las cuatro fuentes configuradas.
 
 ## Desarrollo local
 
