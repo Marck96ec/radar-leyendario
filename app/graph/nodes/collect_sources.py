@@ -21,10 +21,12 @@ async def collect_sources(
         }
 
     source_items = await source_provider.fetch()
-    return {
-        "source_items": source_items,
-        "metadata": _trace_metadata(state, len(source_items)),
-    }
+    metadata = _trace_metadata(state, len(source_items))
+    failures = getattr(source_provider, "failures", [])
+    if failures:
+        metadata["source_failures"] = failures
+        metadata["source_failure_count"] = len(failures)
+    return {"source_items": source_items, "metadata": metadata}
 
 
 def build_collect_sources_node(source_provider):

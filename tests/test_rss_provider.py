@@ -1,3 +1,4 @@
+import time
 from datetime import datetime, timezone
 from time import struct_time
 from types import SimpleNamespace
@@ -81,3 +82,25 @@ async def test_invalid_entries_and_failed_feeds_are_skipped() -> None:
         items = await RSSSourceProvider([FEED_ONE, FEED_TWO]).fetch()
 
     assert [item.title for item in items] == ["Valid"]
+
+
+@pytest.mark.asyncio
+async def test_feed_timeout_is_recorded_without_blocking_other_results() -> None:
+    def parse(url: str) -> SimpleNamespace:
+        if url == FEED_ONE.url:
+            time.sleep(0.2)
+        return parsed_feed(
+            {
+                "title": "Fast result",
+                "link": "https://example.test/fast",
+            }
+        )
+
+    with patch(
+        "app.infrastructure.sources.rss_provider.feedparser.parse", side_effect=parse
+    ):
+        provider = RSSSourceProvider([FEED_ONE, FEED_TWO], timeout_seconds=0.1)
+        items = await provider.fetch()
+
+    assert [item.url for item in items] == ["https://example.test/fast"]
+    assert provider.failures[0]["source"] == "Official AI"

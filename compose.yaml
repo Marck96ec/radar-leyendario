@@ -1,0 +1,32 @@
+services:
+  radar:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      RUNS_DATABASE_PATH: /app/data/radar_runs.sqlite3
+    expose:
+      - "8000"
+    volumes:
+      - ./data:/app/data
+    networks:
+      n8n_internal:
+        aliases:
+          - radar
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health', timeout=3).read()"
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+networks:
+  n8n_internal:
+    external: true
