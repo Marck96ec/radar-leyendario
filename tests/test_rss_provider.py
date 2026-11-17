@@ -3,7 +3,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from time import struct_time
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -74,6 +74,79 @@ async def test_content_precedence_and_timestamp_fallbacks_are_deterministic() ->
     assert items[0].published_at.tzinfo is timezone.utc
     assert items[1].published_at == datetime(2026, 2, 3, 4, 5, 6, tzinfo=timezone.utc)
     assert items[2].published_at == datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_html_fragments_are_cleaned_without_losing_text() -> None:
+    html_entry = {
+        "title": "HTML publication",
+        "link": "https://example.test/html",
+        "summary": "<p>First paragraph.</p><script>ignore()</script><p>Second &amp; useful.</p>",
+    }
+
+    with patch(
+        "app.infrastructure.sources.rss_provider.feedparser.parse",
+        return_value=parsed_feed(html_entry),
+    ):
+        items = await RSSSourceProvider(
+            [RSSFeedConfig("Media", FEED_ONE.url, SourceType.MEDIA)],
+            enrich_official_content=False,
+        ).fetch()
+
+    assert items[0].content == "First paragraph. Second & useful."
+
+
+@pytest.mark.asyncio
+async def test_short_official_content_is_enriched_and_keeps_source_id() -> None:
+    original = "A short official fragment."
+    enriched = "An official article provides the complete context " * 20
+    provider = RSSSourceProvider([FEED_ONE], minimum_content_chars=100)
+
+    with patch(
+        "app.infrastructure.sources.rss_provider.feedparser.parse",
+        return_value=parsed_feed(
+            {"title": "Official item", "link": "https://example.test/item", "summary": original}
+        ),
+    ), patch.object(
+        provider, "_download_article", new=AsyncMock(return_value=enriched)
+    ):
+        items = await provider.fetch()
+
+    assert items[0].content == enriched[:12_000]
+    assert items[0].id
+    assert provider.enrichment_stats == {
+        "eligible": 1,
+        "enriched": 1,
+        "failed": 0,
+        "minimum_content_chars": 100,
+    }
+
+
+@pytest.mark.asyncio
+async def test_enrichment_failure_preserves_rss_content() -> None:
+    original = "The original RSS fragment remains available."
+    provider = RSSSourceProvider([FEED_ONE], minimum_content_chars=100)
+
+    with patch(
+        "app.infrastructure.sources.rss_provider.feedparser.parse",
+        return_value=parsed_feed(
+            {"title": "Official item", "link": "https://example.test/item", "summary": original}
+        ),
+    ), patch.object(
+        provider, "_download_article", new=AsyncMock(return_value=None)
+    ):
+        items = await provider.fetch()
+
+    assert items[0].content == original
+    assert provider.enrichment_stats["failed"] == 1
+
+
+@pytest.mark.asyncio
+async def test_private_article_destinations_are_rejected() -> None:
+    provider = RSSSourceProvider([FEED_ONE], enrich_official_content=False)
+
+    assert not await provider._is_safe_public_url("http://127.0.0.1/article")
+    assert not await provider._is_safe_public_url("http://169.254.169.254/metadata")
 
 
 @pytest.mark.asyncio

@@ -235,9 +235,34 @@ async def test_node_returns_partial_state_metadata_and_trace() -> None:
     result = await validate_evidence_node(state, provider)
 
     assert isinstance(result["evidence"][0], Evidence)
-    assert result["metadata"] == {
-        "execution_trace": ["detect_signals", "validate_evidence"],
-        "evidence_count": 1,
+    assert result["metadata"]["execution_trace"] == [
+        "detect_signals",
+        "validate_evidence",
+    ]
+    assert result["metadata"]["evidence_count"] == 1
+    assert result["metadata"]["evidence_metrics"]["eligible_sources"] == 1
+    assert result["metadata"]["quality_metrics"]["evidence_accepted"] == 1
+
+
+@pytest.mark.asyncio
+async def test_empty_model_response_keeps_evidence_empty_and_reports_diagnostic() -> None:
+    source = build_source("Empty response report")
+    event = Event(title="An event", summary="Event summary", source_items=[source])
+    signal = build_signal(event)
+    provider = FakeLLMProvider(
+        {EvidenceValidationResponse: EvidenceValidationResponse(evidence=[])}
+    )
+    state = build_state()
+    state["events"] = [event]
+    state["signals"] = [signal]
+
+    result = await validate_evidence_node(state, provider)
+
+    assert result["evidence"] == []
+    assert "No se aceptaron evidencias" in result["metadata"]["evidence_warning"]
+    assert result["metadata"]["evidence_metrics"]["evidence_proposed"] == 0
+    assert result["metadata"]["evidence_metrics"]["discard_reasons"] == {
+        "model_returned_no_evidence": 1
     }
 
 

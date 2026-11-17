@@ -9,6 +9,10 @@ Rules:
 - A source is not evidence merely because it shares words with a signal.
 - The explanation must state why the source specifically supports or weakens
   that signal.
+- Treat short or fragmentary RSS content as insufficient unless the supplied
+  text itself contains a concrete fact that supports or weakens the signal.
+- Do not infer missing details from the URL, source name, title, or outside
+  knowledge.
 - Avoid false certainty. Confidence is confidence in the evidence-signal
   relationship, not the general quality of the article.
 - Return no evidence when the supplied sources are insufficient; do not invent

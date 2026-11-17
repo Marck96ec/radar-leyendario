@@ -26,6 +26,11 @@ def build_source_provider(settings: Settings | None = None) -> SourceProvider:
         max_items_per_feed=resolved_settings.RSS_MAX_ITEMS_PER_FEED,
         max_item_age_hours=resolved_settings.RSS_MAX_ITEM_AGE_HOURS,
         max_total_items=resolved_settings.RSS_MAX_TOTAL_ITEMS,
+        enrich_official_content=resolved_settings.RSS_ENRICH_OFFICIAL_CONTENT,
+        enrichment_timeout_seconds=resolved_settings.RSS_ENRICHMENT_TIMEOUT_SECONDS,
+        enrichment_max_bytes=resolved_settings.RSS_ENRICHMENT_MAX_BYTES,
+        enrichment_concurrency=resolved_settings.RSS_ENRICHMENT_CONCURRENCY,
+        minimum_content_chars=resolved_settings.RSS_MIN_CONTENT_CHARS,
     )
 
 

@@ -1,15 +1,25 @@
 import asyncio
+import ipaddress
 import logging
+import socket
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from time import struct_time
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import feedparser
+import httpx
 
 from app.domain.source_item import SourceItem
 from app.infrastructure.sources.config import RSSFeedConfig
+from app.services.source_content import (
+    MAX_SOURCE_CONTENT_CHARS,
+    MIN_SOURCE_CONTENT_CHARS,
+    clean_source_text,
+    extract_article_text,
+    has_sufficient_source_content,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -25,6 +35,11 @@ class RSSSourceProvider:
         max_item_age_hours: float | None = None,
         max_total_items: int | None = None,
         clock: Callable[[], datetime] | None = None,
+        enrich_official_content: bool = True,
+        enrichment_timeout_seconds: float = 5.0,
+        enrichment_max_bytes: int = 1_000_000,
+        enrichment_concurrency: int = 4,
+        minimum_content_chars: int = MIN_SOURCE_CONTENT_CHARS,
     ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("RSS timeout must be greater than zero")
@@ -34,13 +49,27 @@ class RSSSourceProvider:
             raise ValueError("RSS max item age hours must be greater than zero")
         if max_total_items is not None and max_total_items <= 0:
             raise ValueError("RSS max total items must be greater than zero")
+        if enrichment_timeout_seconds <= 0:
+            raise ValueError("RSS enrichment timeout must be greater than zero")
+        if enrichment_max_bytes <= 0:
+            raise ValueError("RSS enrichment max bytes must be greater than zero")
+        if enrichment_concurrency <= 0:
+            raise ValueError("RSS enrichment concurrency must be greater than zero")
+        if minimum_content_chars <= 0:
+            raise ValueError("RSS minimum content chars must be greater than zero")
         self._feeds = list(feeds)
         self._timeout_seconds = timeout_seconds
         self._max_items_per_feed = max_items_per_feed
         self._max_item_age_hours = max_item_age_hours
         self._max_total_items = max_total_items
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._enrich_official_content = enrich_official_content
+        self._enrichment_timeout_seconds = enrichment_timeout_seconds
+        self._enrichment_max_bytes = enrichment_max_bytes
+        self._enrichment_concurrency = enrichment_concurrency
+        self._minimum_content_chars = minimum_content_chars
         self._failures: list[dict[str, str]] = []
+        self._enrichment_stats: dict[str, int] = {}
 
     async def fetch(self) -> list[SourceItem]:
         self._failures = []
@@ -97,11 +126,146 @@ class RSSSourceProvider:
 
         source_items, accepted_by_feed = self._apply_volume_filters(items_by_feed)
         self._log_volume_stats(retrieved_by_feed, accepted_by_feed)
+        source_items = await self._enrich_sources(source_items)
         return source_items
 
     @property
     def failures(self) -> list[dict[str, str]]:
         return list(self._failures)
+
+    @property
+    def enrichment_stats(self) -> dict[str, int]:
+        return dict(self._enrichment_stats)
+
+    async def _enrich_sources(self, source_items: list[SourceItem]) -> list[SourceItem]:
+        self._enrichment_stats = {
+            "eligible": 0,
+            "enriched": 0,
+            "failed": 0,
+            "minimum_content_chars": self._minimum_content_chars,
+        }
+        if not self._enrich_official_content:
+            return source_items
+
+        candidates = [
+            item
+            for item in source_items
+            if item.source_type.value == "OFFICIAL"
+            and not has_sufficient_source_content(
+                item.content, minimum_chars=self._minimum_content_chars
+            )
+        ]
+        self._enrichment_stats["eligible"] = len(candidates)
+        if not candidates:
+            return source_items
+
+        semaphore = asyncio.Semaphore(self._enrichment_concurrency)
+        async with httpx.AsyncClient(
+            timeout=self._enrichment_timeout_seconds,
+            follow_redirects=False,
+            headers={"User-Agent": "RadarLeyendario/1.0 (+source-enrichment)"},
+        ) as client:
+            results = await asyncio.gather(
+                *(self._enrich_item(item, client, semaphore) for item in candidates),
+                return_exceptions=True,
+            )
+
+        enriched_by_id: dict[Any, str] = {}
+        for item, result in zip(candidates, results):
+            if isinstance(result, Exception) or not result:
+                self._enrichment_stats["failed"] += 1
+                if isinstance(result, Exception):
+                    logger.info(
+                        "RSS article enrichment failed",
+                        extra={"source_url": item.url, "error": str(result)},
+                    )
+                continue
+            enriched_by_id[item.id] = result
+            self._enrichment_stats["enriched"] += 1
+
+        return [
+            item.model_copy(
+                update={
+                    "content": enriched_by_id.get(item.id, item.content)[
+                        :MAX_SOURCE_CONTENT_CHARS
+                    ]
+                }
+            )
+            for item in source_items
+        ]
+
+    async def _enrich_item(
+        self,
+        item: SourceItem,
+        client: httpx.AsyncClient,
+        semaphore: asyncio.Semaphore,
+    ) -> str | None:
+        async with semaphore:
+            return await self._download_article(item.url, client)
+
+    async def _download_article(
+        self, url: str, client: httpx.AsyncClient
+    ) -> str | None:
+        current_url = url
+        for _ in range(3):
+            if not await self._is_safe_public_url(current_url):
+                return None
+
+            async with client.stream("GET", current_url) as response:
+                if response.is_redirect or response.is_permanent_redirect:
+                    location = response.headers.get("location")
+                    if not location:
+                        return None
+                    current_url = urljoin(current_url, location)
+                    continue
+                if response.status_code != 200:
+                    return None
+                content_type = response.headers.get("content-type", "").lower()
+                if content_type and "html" not in content_type:
+                    return None
+
+                body = bytearray()
+                async for chunk in response.aiter_bytes():
+                    body.extend(chunk)
+                    if len(body) > self._enrichment_max_bytes:
+                        return None
+                encoding = response.encoding or "utf-8"
+                return extract_article_text(
+                    body.decode(encoding, errors="replace"),
+                    max_chars=MAX_SOURCE_CONTENT_CHARS,
+                ) or None
+        return None
+
+    @staticmethod
+    async def _is_safe_public_url(url: str) -> bool:
+        parsed = urlsplit(url)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+        ):
+            return False
+        try:
+            port = parsed.port
+        except ValueError:
+            return False
+        if port not in {None, 80, 443}:
+            return False
+
+        try:
+            addresses = await asyncio.to_thread(
+                socket.getaddrinfo,
+                parsed.hostname,
+                port or (443 if parsed.scheme == "https" else 80),
+                type=socket.SOCK_STREAM,
+            )
+        except OSError:
+            return False
+        return bool(addresses) and all(
+            ipaddress.ip_address(address[4][0]).is_global
+            for address in addresses
+        )
 
     def _apply_volume_filters(
         self, items_by_feed: dict[str, list[SourceItem]]
@@ -190,7 +354,7 @@ class RSSSourceProvider:
         if not title or not cls._is_http_url(url):
             return None
 
-        content = cls._entry_content(entry) or title
+        content = clean_source_text(cls._entry_content(entry)) or title
         return SourceItem(
             title=title,
             url=url,

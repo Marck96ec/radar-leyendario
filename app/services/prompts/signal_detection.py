@@ -9,8 +9,13 @@ Rules:
 - Distinguish observed evidence from inference in each description.
 - Avoid hype, speculation, and generic predictions.
 - Return zero signals when the evidence is insufficient.
-- A signal may relate to one or more events, and every related ID must come
-  from the supplied events.
+- A signal that claims a trend, adoption, growth, ecosystem, landscape,
+  structural change, or other general pattern must relate to at least two
+  distinct events that share a concrete fact. Do not combine unrelated
+  events merely because they mention the same broad topic.
+- A signal about one event must remain a specific, bounded observation; do not
+  present it as a general trend.
+- Every related ID must come from the supplied events.
 - Prioritize useful signals for software development, architecture, AI agents,
   and business decisions.
 - Return at most five signals.

@@ -144,6 +144,25 @@ async def test_signal_with_only_unknown_events_is_discarded() -> None:
 
 
 @pytest.mark.asyncio
+async def test_general_signal_from_one_event_is_discarded_with_reason() -> None:
+    event = build_event("Agents gain autonomy")
+    candidate = SignalCandidate(
+        title="Growing adoption of autonomous agents",
+        description="The trend is becoming widespread.",
+        relevance_score=80,
+        novelty_score=70,
+        confidence_score=90,
+        topics=["agents"],
+        related_event_ids=[event.id],
+    )
+    provider = FakeLLMProvider(SignalDetectionResponse(signals=[candidate]))
+    metrics: dict[str, object] = {}
+
+    assert await detect_signals([event], provider, metrics=metrics) == []
+    assert metrics["discard_reasons"] == {"general_signal_requires_multiple_events": 1}
+
+
+@pytest.mark.asyncio
 async def test_zero_signals_from_llm_returns_empty_list() -> None:
     provider = FakeLLMProvider(SignalDetectionResponse(signals=[]))
 
@@ -178,9 +197,11 @@ async def test_node_returns_signals_and_preserves_execution_trace() -> None:
     result = await detect_signals_node(state, provider)
 
     assert len(result["signals"]) == 1
-    assert result["metadata"] == {
-        "execution_trace": ["cluster_events", "detect_signals"]
-    }
+    assert result["metadata"]["execution_trace"] == [
+        "cluster_events",
+        "detect_signals",
+    ]
+    assert result["metadata"]["signal_metrics"]["signals_accepted"] == 1
 
 
 @pytest.mark.asyncio

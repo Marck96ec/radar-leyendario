@@ -26,6 +26,9 @@ async def collect_sources(
     if failures:
         metadata["source_failures"] = failures
         metadata["source_failure_count"] = len(failures)
+    enrichment_stats = getattr(source_provider, "enrichment_stats", {})
+    if enrichment_stats:
+        metadata["content_enrichment"] = dict(enrichment_stats)
     return {"source_items": source_items, "metadata": metadata}
 
 
