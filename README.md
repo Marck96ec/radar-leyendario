@@ -50,6 +50,12 @@ se versiona ni se incluye en la imagen.
 | `RSS_MAX_ITEMS_PER_FEED` | No | Máximo de artículos más recientes retenidos por cada fuente RSS; por defecto 10. |
 | `RSS_MAX_ITEM_AGE_HOURS` | No | Antigüedad máxima (en horas) de un artículo para ser considerado; por defecto 72. |
 | `RSS_MAX_TOTAL_ITEMS` | No | Máximo global de artículos que ingresan al grafo tras combinar todas las fuentes; por defecto 50. |
+| `RSS_ENRICH_OFFICIAL_CONTENT` | No | Consulta el artículo oficial cuando el fragmento RSS es corto; por defecto `true`. |
+| `RSS_ENRICHMENT_TIMEOUT_SECONDS` | No | Timeout de cada consulta de enriquecimiento; por defecto 5 segundos. |
+| `RSS_ENRICHMENT_MAX_BYTES` | No | Máximo de bytes leídos por artículo HTML; por defecto 1.000.000. |
+| `RSS_ENRICHMENT_CONCURRENCY` | No | Máximo de consultas de artículos simultáneas; por defecto 4. |
+| `RSS_ENRICHMENT_MAX_REDIRECTS` | No | Máximo de redirecciones HTTP seguidas por artículo; por defecto 3. |
+| `RSS_MIN_CONTENT_CHARS` | No | Longitud mínima para considerar suficiente el contenido; por defecto 400. |
 | `RADAR_API_KEY` | Sí | Clave interna enviada como `X-Radar-API-Key` para `/api/v1/radar/*`. |
 | `ENVIRONMENT` | Sí | Usar `production` en VPS; producción sin `RADAR_API_KEY` queda bloqueada. |
 | `RUNS_DATABASE_PATH` | No | Ruta SQLite; en Compose es `/app/data/radar_runs.sqlite3`. |
@@ -105,6 +111,26 @@ original. Los tres límites son configurables por variable de entorno y se
 pueden ampliar o reducir sin tocar código; esto evita, por ejemplo, que una
 fuente con cientos de entradas históricas (como el feed de OpenAI) sature el
 grafo mientras se mantienen las cuatro fuentes configuradas.
+
+### Calidad y trazabilidad de evidencias
+
+Los fragmentos RSS se convierten a texto legible antes de llegar al LLM. Para
+fuentes marcadas como `OFFICIAL`, un fragmento menor que `RSS_MIN_CONTENT_CHARS`
+puede enriquecerse desde su URL pública con timeout, límite de bytes y
+concurrencia acotados. Se siguen como máximo tres redirects HTTP(S), y cada
+destino vuelve a pasar la validación de destino público antes de conectarse;
+se rechazan localhost, redes privadas,
+metadatos link-local, credenciales embebidas y puertos no estándar. Si la
+consulta falla, el fragmento RSS original se conserva. Los fallos de
+enriquecimiento quedan tipificados en `metadata.content_enrichment.failure_reasons`
+sin impedir que continúe la investigación.
+
+La ejecución guarda en `metadata` métricas de calidad, incluyendo fuentes con
+contenido suficiente, señales aceptadas y descartadas, fuentes elegibles,
+evidencias propuestas y aceptadas, y motivos de descarte. Una respuesta vacía
+o inválida del validador deja `evidence` y oportunidades vacías y añade una
+advertencia diagnóstica; el sistema no fabrica evidencia para completar el
+resultado.
 
 ## Desarrollo local
 

@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     RSS_ENRICHMENT_TIMEOUT_SECONDS: float = Field(default=5.0, gt=0, le=120)
     RSS_ENRICHMENT_MAX_BYTES: int = Field(default=1_000_000, gt=0)
     RSS_ENRICHMENT_CONCURRENCY: int = Field(default=4, gt=0)
+    RSS_ENRICHMENT_MAX_REDIRECTS: int = Field(default=3, ge=0)
     RSS_MIN_CONTENT_CHARS: int = Field(default=400, gt=0)
     RUNS_DATABASE_PATH: str = "./data/radar_runs.sqlite3"
     RADAR_API_KEY: SecretStr = SecretStr("")

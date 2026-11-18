@@ -3,13 +3,16 @@ import ipaddress
 import logging
 import socket
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from time import struct_time
 from typing import Any
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import feedparser
+import httpcore
 import httpx
+from httpcore._backends.auto import AutoBackend
 
 from app.domain.source_item import SourceItem
 from app.infrastructure.sources.config import RSSFeedConfig
@@ -24,6 +27,65 @@ from app.services.source_content import (
 
 logger = logging.getLogger(__name__)
 UTC_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+DEFAULT_ENRICHMENT_MAX_REDIRECTS = 3
+
+
+@dataclass(frozen=True)
+class _ResolvedPublicURL:
+    hostname: str
+    port: int
+    address: str
+
+
+@dataclass(frozen=True)
+class _EnrichmentResult:
+    content: str | None
+    failure_reason: str | None = None
+
+
+class _PinnedNetworkBackend(httpcore.AsyncNetworkBackend):
+    """Connect only to addresses resolved and approved for the current request."""
+
+    def __init__(self) -> None:
+        self._backend = AutoBackend()
+        self._pinned_addresses: dict[tuple[str, int], str] = {}
+
+    def pin(self, resolved_url: _ResolvedPublicURL) -> None:
+        self._pinned_addresses[
+            (resolved_url.hostname.lower().rstrip("."), resolved_url.port)
+        ] = resolved_url.address
+
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Any = None,
+    ) -> httpcore.AsyncNetworkStream:
+        address = self._pinned_addresses.get((host.lower().rstrip("."), port))
+        if address is None:
+            raise OSError("Unvalidated destination")
+        return await self._backend.connect_tcp(
+            address, port, timeout, local_address, socket_options
+        )
+
+    async def connect_unix_socket(
+        self,
+        path: str,
+        timeout: float | None = None,
+        socket_options: Any = None,
+    ) -> httpcore.AsyncNetworkStream:
+        return await self._backend.connect_unix_socket(path, timeout, socket_options)
+
+    async def sleep(self, seconds: float) -> None:
+        await self._backend.sleep(seconds)
+
+
+class _PinnedAsyncHTTPTransport(httpx.AsyncHTTPTransport):
+    def __init__(self, backend: _PinnedNetworkBackend) -> None:
+        super().__init__(retries=0, trust_env=False)
+        self._pool._network_backend = backend
 
 
 class RSSSourceProvider:
@@ -40,6 +102,7 @@ class RSSSourceProvider:
         enrichment_max_bytes: int = 1_000_000,
         enrichment_concurrency: int = 4,
         minimum_content_chars: int = MIN_SOURCE_CONTENT_CHARS,
+        enrichment_max_redirects: int = DEFAULT_ENRICHMENT_MAX_REDIRECTS,
     ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("RSS timeout must be greater than zero")
@@ -57,6 +120,8 @@ class RSSSourceProvider:
             raise ValueError("RSS enrichment concurrency must be greater than zero")
         if minimum_content_chars <= 0:
             raise ValueError("RSS minimum content chars must be greater than zero")
+        if enrichment_max_redirects < 0:
+            raise ValueError("RSS enrichment max redirects must not be negative")
         self._feeds = list(feeds)
         self._timeout_seconds = timeout_seconds
         self._max_items_per_feed = max_items_per_feed
@@ -68,8 +133,9 @@ class RSSSourceProvider:
         self._enrichment_max_bytes = enrichment_max_bytes
         self._enrichment_concurrency = enrichment_concurrency
         self._minimum_content_chars = minimum_content_chars
+        self._enrichment_max_redirects = enrichment_max_redirects
         self._failures: list[dict[str, str]] = []
-        self._enrichment_stats: dict[str, int] = {}
+        self._enrichment_stats: dict[str, object] = {}
 
     async def fetch(self) -> list[SourceItem]:
         self._failures = []
@@ -134,7 +200,7 @@ class RSSSourceProvider:
         return list(self._failures)
 
     @property
-    def enrichment_stats(self) -> dict[str, int]:
+    def enrichment_stats(self) -> dict[str, object]:
         return dict(self._enrichment_stats)
 
     async def _enrich_sources(self, source_items: list[SourceItem]) -> list[SourceItem]:
@@ -143,6 +209,7 @@ class RSSSourceProvider:
             "enriched": 0,
             "failed": 0,
             "minimum_content_chars": self._minimum_content_chars,
+            "failure_reasons": {},
         }
         if not self._enrich_official_content:
             return source_items
@@ -160,28 +227,33 @@ class RSSSourceProvider:
             return source_items
 
         semaphore = asyncio.Semaphore(self._enrichment_concurrency)
-        async with httpx.AsyncClient(
-            timeout=self._enrichment_timeout_seconds,
-            follow_redirects=False,
-            headers={"User-Agent": "RadarLeyendario/1.0 (+source-enrichment)"},
-        ) as client:
-            results = await asyncio.gather(
-                *(self._enrich_item(item, client, semaphore) for item in candidates),
-                return_exceptions=True,
-            )
+        results = await asyncio.gather(
+            *(self._enrich_item(item, semaphore) for item in candidates),
+            return_exceptions=True,
+        )
 
         enriched_by_id: dict[Any, str] = {}
         for item, result in zip(candidates, results):
-            if isinstance(result, Exception) or not result:
-                self._enrichment_stats["failed"] += 1
-                if isinstance(result, Exception):
-                    logger.info(
-                        "RSS article enrichment failed",
-                        extra={"source_url": item.url, "error": str(result)},
-                    )
+            if isinstance(result, Exception):
+                self._record_enrichment_failure(
+                    "transport_error",
+                    item.url,
+                    error=result,
+                )
                 continue
-            enriched_by_id[item.id] = result
-            self._enrichment_stats["enriched"] += 1
+            content = result.content if isinstance(result, _EnrichmentResult) else result
+            if not isinstance(content, str) or not content:
+                reason = (
+                    result.failure_reason
+                    if isinstance(result, _EnrichmentResult)
+                    else "empty_extraction"
+                )
+                self._record_enrichment_failure(reason or "empty_extraction", item.url)
+                continue
+            enriched_by_id[item.id] = content
+            self._enrichment_stats["enriched"] = (
+                int(self._enrichment_stats["enriched"]) + 1
+            )
 
         return [
             item.model_copy(
@@ -197,74 +269,175 @@ class RSSSourceProvider:
     async def _enrich_item(
         self,
         item: SourceItem,
-        client: httpx.AsyncClient,
         semaphore: asyncio.Semaphore,
-    ) -> str | None:
+    ) -> _EnrichmentResult:
         async with semaphore:
-            return await self._download_article(item.url, client)
+            backend = _PinnedNetworkBackend()
+            transport = _PinnedAsyncHTTPTransport(backend)
+            async with httpx.AsyncClient(
+                timeout=self._enrichment_timeout_seconds,
+                follow_redirects=False,
+                headers={"User-Agent": "RadarLeyendario/1.0 (+source-enrichment)"},
+                transport=transport,
+                trust_env=False,
+            ) as client:
+                try:
+                    return await self._download_article(item.url, client, backend)
+                except httpx.TimeoutException:
+                    return _EnrichmentResult(None, "timeout")
+                except httpx.RequestError:
+                    return _EnrichmentResult(None, "transport_error")
+                except OSError:
+                    return _EnrichmentResult(None, "transport_error")
 
     async def _download_article(
-        self, url: str, client: httpx.AsyncClient
-    ) -> str | None:
+        self,
+        url: str,
+        client: httpx.AsyncClient,
+        backend: _PinnedNetworkBackend,
+    ) -> _EnrichmentResult:
         current_url = url
-        for _ in range(3):
-            if not await self._is_safe_public_url(current_url):
-                return None
+        redirects_followed = 0
+        while True:
+            resolved_url, failure_reason = await self._resolve_public_url(current_url)
+            if resolved_url is None:
+                return _EnrichmentResult(None, failure_reason)
+            backend.pin(resolved_url)
 
-            async with client.stream("GET", current_url) as response:
-                if response.is_redirect or response.is_permanent_redirect:
-                    location = response.headers.get("location")
-                    if not location:
-                        return None
-                    current_url = urljoin(current_url, location)
-                    continue
-                if response.status_code != 200:
-                    return None
-                content_type = response.headers.get("content-type", "").lower()
-                if content_type and "html" not in content_type:
-                    return None
+            try:
+                async with client.stream("GET", current_url) as response:
+                    if response.status_code in {301, 302, 303, 307, 308}:
+                        if redirects_followed >= self._enrichment_max_redirects:
+                            return _EnrichmentResult(None, "redirect_limit")
+                        location = response.headers.get("location")
+                        if not location:
+                            return _EnrichmentResult(None, "invalid_redirect")
+                        current_url = urljoin(current_url, location)
+                        redirects_followed += 1
+                        continue
+                    if response.status_code == 403:
+                        return _EnrichmentResult(None, "http_403")
+                    if response.status_code == 429:
+                        return _EnrichmentResult(None, "http_429")
+                    if 500 <= response.status_code <= 599:
+                        return _EnrichmentResult(None, "http_5xx")
+                    if response.status_code != 200:
+                        return _EnrichmentResult(None, f"http_{response.status_code}")
+                    content_type = (
+                        response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+                    )
+                    if content_type and content_type not in {
+                        "text/html",
+                        "application/xhtml+xml",
+                    }:
+                        return _EnrichmentResult(None, "invalid_content_type")
 
-                body = bytearray()
-                async for chunk in response.aiter_bytes():
-                    body.extend(chunk)
-                    if len(body) > self._enrichment_max_bytes:
-                        return None
-                encoding = response.encoding or "utf-8"
-                return extract_article_text(
-                    body.decode(encoding, errors="replace"),
-                    max_chars=MAX_SOURCE_CONTENT_CHARS,
-                ) or None
-        return None
+                    content_length = response.headers.get("content-length")
+                    if content_length:
+                        try:
+                            if int(content_length) > self._enrichment_max_bytes:
+                                return _EnrichmentResult(None, "response_too_large")
+                        except ValueError:
+                            pass
+
+                    body = bytearray()
+                    async for chunk in response.aiter_bytes():
+                        body.extend(chunk)
+                        if len(body) > self._enrichment_max_bytes:
+                            return _EnrichmentResult(None, "response_too_large")
+                    encoding = response.encoding or "utf-8"
+                    content = extract_article_text(
+                        body.decode(encoding, errors="replace"),
+                        max_chars=MAX_SOURCE_CONTENT_CHARS,
+                    )
+                    return _EnrichmentResult(
+                        content or None,
+                        None if content else "empty_extraction",
+                    )
+            except httpx.TimeoutException:
+                return _EnrichmentResult(None, "timeout")
+            except httpx.RequestError:
+                return _EnrichmentResult(None, "transport_error")
+            except OSError:
+                return _EnrichmentResult(None, "transport_error")
+
+    def _record_enrichment_failure(
+        self,
+        reason: str,
+        url: str,
+        *,
+        error: Exception | None = None,
+    ) -> None:
+        self._enrichment_stats["failed"] = int(self._enrichment_stats["failed"]) + 1
+        failure_reasons = self._enrichment_stats["failure_reasons"]
+        if not isinstance(failure_reasons, dict):
+            failure_reasons = {}
+            self._enrichment_stats["failure_reasons"] = failure_reasons
+        failure_reasons[reason] = int(failure_reasons.get(reason, 0)) + 1
+        logger.info(
+            "RSS article enrichment failed",
+            extra={
+                "source_url": url,
+                "failure_reason": reason,
+                **({"error": str(error)} if error is not None else {}),
+            },
+        )
 
     @staticmethod
     async def _is_safe_public_url(url: str) -> bool:
-        parsed = urlsplit(url)
+        resolved_url, _ = await RSSSourceProvider._resolve_public_url(url)
+        return resolved_url is not None
+
+    @staticmethod
+    async def _resolve_public_url(
+        url: str,
+    ) -> tuple[_ResolvedPublicURL | None, str]:
+        try:
+            parsed = urlsplit(url)
+            hostname = parsed.hostname
+        except ValueError:
+            return None, "unsafe_url"
         if (
             parsed.scheme not in {"http", "https"}
-            or not parsed.hostname
+            or not hostname
             or parsed.username
             or parsed.password
         ):
-            return False
+            return None, "unsafe_url"
         try:
             port = parsed.port
         except ValueError:
-            return False
+            return None, "unsafe_url"
         if port not in {None, 80, 443}:
-            return False
+            return None, "unsafe_url"
 
         try:
             addresses = await asyncio.to_thread(
                 socket.getaddrinfo,
-                parsed.hostname,
+                hostname,
                 port or (443 if parsed.scheme == "https" else 80),
                 type=socket.SOCK_STREAM,
             )
+        except socket.gaierror:
+            return None, "dns_error"
         except OSError:
-            return False
-        return bool(addresses) and all(
-            ipaddress.ip_address(address[4][0]).is_global
-            for address in addresses
+            return None, "dns_error"
+
+        if not addresses:
+            return None, "dns_error"
+        resolved_addresses = [address[4][0] for address in addresses]
+        try:
+            if not all(ipaddress.ip_address(address).is_global for address in resolved_addresses):
+                return None, "unsafe_url"
+        except ValueError:
+            return None, "unsafe_url"
+        return (
+            _ResolvedPublicURL(
+                hostname=hostname,
+                port=port or (443 if parsed.scheme == "https" else 80),
+                address=resolved_addresses[0],
+            ),
+            "",
         )
 
     def _apply_volume_filters(

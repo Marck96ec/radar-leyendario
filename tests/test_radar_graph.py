@@ -81,6 +81,13 @@ async def test_node_does_not_mutate_received_state() -> None:
 class FakeSourceProvider:
     def __init__(self, source_items: list[SourceItem]) -> None:
         self.source_items = source_items
+        self.enrichment_stats = {
+            "eligible": 1,
+            "enriched": 0,
+            "failed": 1,
+            "minimum_content_chars": 400,
+            "failure_reasons": {"http_403": 1},
+        }
 
     async def fetch(self) -> list[SourceItem]:
         return self.source_items
@@ -120,6 +127,27 @@ async def test_injected_source_provider_returns_partial_state_and_source_count()
     assert result["source_items"] == [source_item]
     assert result["metadata"]["source_count"] == 1
     assert result["metadata"]["execution_trace"] == EXPECTED_TRACE
+
+
+@pytest.mark.asyncio
+async def test_collect_sources_exposes_typed_enrichment_failures() -> None:
+    source_item = SourceItem(
+        title="A publication",
+        url="https://example.test/publication",
+        source_name="Example",
+        published_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        content="Content",
+        source_type=SourceType.MEDIA,
+    )
+
+    result = await collect_sources(
+        build_empty_state(),
+        FakeSourceProvider([source_item]),
+    )
+
+    assert result["metadata"]["content_enrichment"]["failure_reasons"] == {
+        "http_403": 1
+    }
 
 
 class EmptyEvidenceIntegrationLLM:

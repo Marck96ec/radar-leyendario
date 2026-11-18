@@ -5,11 +5,17 @@ from time import struct_time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 
 from app.domain.enums import SourceType
 from app.infrastructure.sources.config import RSSFeedConfig
-from app.infrastructure.sources.rss_provider import RSSSourceProvider
+from app.infrastructure.sources.rss_provider import (
+    _EnrichmentResult,
+    RSSSourceProvider,
+    _PinnedNetworkBackend,
+    _ResolvedPublicURL,
+)
 
 
 FEED_ONE = RSSFeedConfig("Official AI", "https://example.test/one.xml", SourceType.OFFICIAL)
@@ -119,6 +125,7 @@ async def test_short_official_content_is_enriched_and_keeps_source_id() -> None:
         "enriched": 1,
         "failed": 0,
         "minimum_content_chars": 100,
+        "failure_reasons": {},
     }
 
 
@@ -139,6 +146,42 @@ async def test_enrichment_failure_preserves_rss_content() -> None:
 
     assert items[0].content == original
     assert provider.enrichment_stats["failed"] == 1
+    assert provider.enrichment_stats["failure_reasons"] == {"empty_extraction": 1}
+
+
+@pytest.mark.asyncio
+async def test_each_eligible_item_is_counted_once_with_a_typed_failure_reason() -> None:
+    entries = [
+        {"title": f"Official item {index}", "link": f"https://example.test/{index}", "summary": "short"}
+        for index in range(3)
+    ]
+    provider = RSSSourceProvider([FEED_ONE], minimum_content_chars=100)
+    enriched = "An enriched article with grounded content."
+
+    with patch(
+        "app.infrastructure.sources.rss_provider.feedparser.parse",
+        return_value=parsed_feed(*entries),
+    ), patch.object(
+        provider,
+        "_download_article",
+        new=AsyncMock(
+            side_effect=[
+                enriched,
+                _EnrichmentResult(None, "http_403"),
+                _EnrichmentResult(None, "timeout"),
+            ]
+        ),
+    ):
+        items = await provider.fetch()
+
+    stats = provider.enrichment_stats
+    assert stats["eligible"] == 3
+    assert stats["enriched"] == 1
+    assert stats["failed"] == 2
+    assert stats["enriched"] + stats["failed"] == stats["eligible"]
+    assert stats["failure_reasons"] == {"http_403": 1, "timeout": 1}
+    assert items[1].content == "short"
+    assert items[2].content == "short"
 
 
 @pytest.mark.asyncio
@@ -147,6 +190,166 @@ async def test_private_article_destinations_are_rejected() -> None:
 
     assert not await provider._is_safe_public_url("http://127.0.0.1/article")
     assert not await provider._is_safe_public_url("http://169.254.169.254/metadata")
+    assert not await provider._is_safe_public_url("http://[::1]/article")
+
+
+@pytest.mark.asyncio
+async def test_dns_resolution_rejects_mixed_public_and_private_addresses() -> None:
+    provider = RSSSourceProvider([FEED_ONE], enrich_official_content=False)
+
+    with patch(
+        "app.infrastructure.sources.rss_provider.socket.getaddrinfo",
+        return_value=[
+            (2, 1, 6, "", ("93.184.216.34", 443)),
+            (10, 1, 6, "", ("::1", 443, 0, 0)),
+        ],
+    ):
+        assert not await provider._is_safe_public_url("https://example.test/article")
+
+
+def _resolved_url() -> _ResolvedPublicURL:
+    return _ResolvedPublicURL("example.test", 443, "93.184.216.34")
+
+
+async def _download_with_response(
+    provider: RSSSourceProvider,
+    handler,
+    *,
+    resolutions: list[tuple[_ResolvedPublicURL | None, str]] | None = None,
+) -> object:
+    transport = httpx.MockTransport(handler)
+    resolutions = resolutions or [(_resolved_url(), "")]
+    with patch.object(
+        provider,
+        "_resolve_public_url",
+        new=AsyncMock(side_effect=resolutions),
+    ):
+        async with httpx.AsyncClient(transport=transport) as client:
+            return await provider._download_article(
+                "https://example.test/article",
+                client,
+                _PinnedNetworkBackend(),
+            )
+
+
+@pytest.mark.asyncio
+async def test_http_200_extracts_article_content() -> None:
+    provider = RSSSourceProvider([FEED_ONE])
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html"},
+            text="<article>Official article content.</article>",
+        )
+
+    result = await _download_with_response(provider, handler)
+
+    assert result.content == "Official article content."
+    assert result.failure_reason is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status_code", "reason"),
+    [(403, "http_403"), (429, "http_429"), (503, "http_5xx"), (404, "http_404")],
+)
+async def test_http_failures_are_typed_without_fabricating_content(
+    status_code: int, reason: str
+) -> None:
+    provider = RSSSourceProvider([FEED_ONE])
+    requests = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal requests
+        requests += 1
+        return httpx.Response(status_code)
+
+    result = await _download_with_response(provider, handler)
+
+    assert result.content is None
+    assert result.failure_reason == reason
+    assert requests == 1
+
+
+@pytest.mark.asyncio
+async def test_timeout_is_typed() -> None:
+    provider = RSSSourceProvider([FEED_ONE])
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("article timed out", request=request)
+
+    result = await _download_with_response(provider, handler)
+
+    assert result.failure_reason == "timeout"
+
+
+@pytest.mark.asyncio
+async def test_redirects_follow_three_hops_and_fetch_the_final_document() -> None:
+    provider = RSSSourceProvider([FEED_ONE], enrichment_max_redirects=3)
+    requests: list[str] = []
+    responses = [
+        httpx.Response(301, headers={"location": "/one"}),
+        httpx.Response(302, headers={"location": "/two"}),
+        httpx.Response(307, headers={"location": "/three"}),
+        httpx.Response(
+            200,
+            headers={"content-type": "text/html"},
+            text="<article>Final document.</article>",
+        ),
+    ]
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(str(request.url))
+        return responses[len(requests) - 1]
+
+    result = await _download_with_response(
+        provider,
+        handler,
+        resolutions=[(_resolved_url(), "")] * 4,
+    )
+
+    assert result.content == "Final document."
+    assert len(requests) == 4
+
+
+@pytest.mark.asyncio
+async def test_redirect_limit_is_reported_without_requesting_an_extra_hop() -> None:
+    provider = RSSSourceProvider([FEED_ONE], enrichment_max_redirects=3)
+    requests = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal requests
+        requests += 1
+        return httpx.Response(301, headers={"location": "/next"})
+
+    result = await _download_with_response(
+        provider,
+        handler,
+        resolutions=[(_resolved_url(), "")] * 4,
+    )
+
+    assert result.failure_reason == "redirect_limit"
+    assert requests == 4
+
+
+@pytest.mark.asyncio
+async def test_invalid_content_type_and_empty_extraction_are_typed() -> None:
+    provider = RSSSourceProvider([FEED_ONE])
+
+    async def invalid_type(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, headers={"content-type": "application/json"}, text='{"ok": true}'
+        )
+
+    invalid_result = await _download_with_response(provider, invalid_type)
+    assert invalid_result.failure_reason == "invalid_content_type"
+
+    async def empty_html(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "text/html"}, text="<html></html>")
+
+    empty_result = await _download_with_response(provider, empty_html)
+    assert empty_result.failure_reason == "empty_extraction"
 
 
 @pytest.mark.asyncio

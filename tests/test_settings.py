@@ -7,6 +7,7 @@ def test_rss_volume_settings_have_sensible_defaults() -> None:
     assert settings.RSS_MAX_ITEMS_PER_FEED == 10
     assert settings.RSS_MAX_ITEM_AGE_HOURS == 72
     assert settings.RSS_MAX_TOTAL_ITEMS == 50
+    assert settings.RSS_ENRICHMENT_MAX_REDIRECTS == 3
 
 
 def test_rss_volume_settings_can_be_overridden_via_environment(monkeypatch) -> None:

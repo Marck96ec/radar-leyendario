@@ -30,6 +30,7 @@ def build_source_provider(settings: Settings | None = None) -> SourceProvider:
         enrichment_timeout_seconds=resolved_settings.RSS_ENRICHMENT_TIMEOUT_SECONDS,
         enrichment_max_bytes=resolved_settings.RSS_ENRICHMENT_MAX_BYTES,
         enrichment_concurrency=resolved_settings.RSS_ENRICHMENT_CONCURRENCY,
+        enrichment_max_redirects=resolved_settings.RSS_ENRICHMENT_MAX_REDIRECTS,
         minimum_content_chars=resolved_settings.RSS_MIN_CONTENT_CHARS,
     )
 
